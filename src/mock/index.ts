@@ -14,6 +14,10 @@ const queryLocations = [
   '杭州市西湖区老百姓大药房',
   '武汉市江汉区中联大药房',
   '南京市鼓楼区先声再康药店',
+  '西安市雁塔区怡康医药超市',
+  '重庆市渝北区和平药房',
+  '天津市河西区瑞澄大药房',
+  '苏州市工业园区海王星辰',
 ];
 
 function padCode(code: string, idx: number): string {
@@ -26,29 +30,96 @@ function padCode(code: string, idx: number): string {
   return base + check;
 }
 
+function getDaysToExpiry(expiryDate: Date, today: Date): number {
+  const diffMs = expiryDate.getTime() - today.getTime();
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+}
+
 export function getBatchCompareList(batchNumber: string): BatchCompareItem[] {
   const batchDrugs = getDrugsByBatch(batchNumber);
   if (batchDrugs.length === 0) return [];
   const sample = batchDrugs[0];
   const result: BatchCompareItem[] = [];
   const isRecalled = isBatchRecalled(batchNumber);
+  const recallInfo = getRecallInfo(batchNumber);
   const today = new Date('2026-06-09');
-  const expiry = new Date(sample.expiryDate);
-  const isExpired = expiry < today;
+  const baseExpiry = new Date(sample.expiryDate);
+  const baseDaysToExpiry = getDaysToExpiry(baseExpiry, today);
+  const productName = sample.productName;
 
-  for (let i = 0; i < 5; i++) {
+  let totalCount = 7;
+  if (productName === '布洛芬缓释胶囊') totalCount = 8;
+  if (productName === '硝苯地平控释片') totalCount = 7;
+  if (productName === '复方板蓝根颗粒') totalCount = 6;
+
+  for (let i = 0; i < totalCount; i++) {
+    const idx = i as number;
+    const isFirst = idx === 0;
     const qDate = new Date(today);
     qDate.setDate(qDate.getDate() - Math.floor(Math.random() * 30));
     const qHour = 9 + Math.floor(Math.random() * 10);
     const qMin = Math.floor(Math.random() * 60);
     const qTimeStr = `${qDate.getFullYear()}-${String(qDate.getMonth() + 1).padStart(2, '0')}-${String(qDate.getDate()).padStart(2, '0')} ${String(qHour).padStart(2, '0')}:${String(qMin).padStart(2, '0')}`;
 
+    const itemExpiry = new Date(baseExpiry);
+    itemExpiry.setDate(itemExpiry.getDate() + Math.floor((Math.random() - 0.5) * 5));
+    const daysToExpiry = getDaysToExpiry(itemExpiry, today);
+
+    let itemIsExpired = daysToExpiry < 0;
+    let itemIsRecalled = isRecalled;
+    let itemRecallLevel = recallInfo?.recallLevel;
+
+    if (productName === '复方板蓝根颗粒') {
+      const expiredRate = 0.6;
+      itemIsExpired = idx < Math.floor(totalCount * expiredRate) || (isFirst && baseDaysToExpiry < 0);
+      if (!itemIsExpired && Math.random() < 0.3) {
+        itemIsExpired = true;
+      }
+      itemIsRecalled = false;
+      itemRecallLevel = undefined;
+    } else if (productName === '硝苯地平控释片' && isRecalled) {
+      const recallRate = 0.4;
+      itemIsRecalled = idx < Math.floor(totalCount * recallRate) || isFirst;
+      if (!itemIsRecalled && Math.random() < 0.2) {
+        itemIsRecalled = true;
+      }
+      itemIsExpired = false;
+    } else if (productName === '布洛芬缓释胶囊') {
+      itemIsExpired = false;
+      itemIsRecalled = false;
+      itemRecallLevel = undefined;
+      if (idx === 5) {
+        itemExpiry.setMonth(itemExpiry.getMonth() - 23);
+        const nearDays = getDaysToExpiry(itemExpiry, today);
+        result.push({
+          traceCode: isFirst ? sample.traceCode : padCode(sample.traceCode, idx + 1),
+          queryLocation: queryLocations[(idx * 3 + 2) % queryLocations.length],
+          queryTime: qTimeStr,
+          isExpired: nearDays < 0,
+          isRecalled: false,
+          expiryDate: itemExpiry.toISOString().split('T')[0],
+          daysToExpiry: nearDays,
+          recallLevel: undefined,
+          isCurrentQuery: isFirst,
+        });
+        continue;
+      }
+    } else {
+      itemIsExpired = daysToExpiry < 0;
+      itemIsRecalled = isRecalled;
+      itemRecallLevel = recallInfo?.recallLevel;
+    }
+
     result.push({
-      traceCode: i === 0 ? sample.traceCode : padCode(sample.traceCode, i + 1),
-      queryLocation: queryLocations[(i * 3) % queryLocations.length],
+      traceCode: isFirst ? sample.traceCode : padCode(sample.traceCode, idx + 1),
+      queryLocation: queryLocations[(idx * 3 + 1) % queryLocations.length],
       queryTime: qTimeStr,
-      isExpired,
-      isRecalled,
+      isExpired: itemIsExpired,
+      isRecalled: itemIsRecalled,
+      expiryDate: itemExpiry.toISOString().split('T')[0],
+      daysToExpiry: itemIsExpired ? daysToExpiry : getDaysToExpiry(itemExpiry, today),
+      recallLevel: itemIsRecalled ? itemRecallLevel : undefined,
+      isCurrentQuery: isFirst,
     });
   }
   return result;

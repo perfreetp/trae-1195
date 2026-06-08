@@ -1,5 +1,5 @@
 import { useOutletContext } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, ShieldCheck, Clock, AlertCircle, Phone, FileWarning, Hash } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ShieldCheck, Clock, AlertCircle, Phone, FileWarning, Hash, TrendingUp } from 'lucide-react';
 import type { DrugTraceInfo, RiskResult } from '@/types';
 
 type ContextType = { drug: DrugTraceInfo; risk: RiskResult | null };
@@ -47,8 +47,26 @@ function RiskGauge({ risk }: { risk: RiskResult | null }) {
   );
 }
 
+function getQueryFrequencyLevel(queryCount: number): {
+  level: 'normal' | 'high' | 'abnormal';
+  label: string;
+  color: string;
+  avgCompare: number;
+} {
+  const avgCompare = 2;
+  if (queryCount >= 6) {
+    return { level: 'abnormal', label: '异常高', color: 'text-rose-600 bg-rose-100', avgCompare };
+  }
+  if (queryCount >= 4) {
+    return { level: 'high', label: '偏高', color: 'text-amber-600 bg-amber-100', avgCompare };
+  }
+  return { level: 'normal', label: '正常', color: 'text-emerald-600 bg-emerald-100', avgCompare };
+}
+
 export default function RiskPage() {
   const { drug, risk } = useOutletContext<ContextType>();
+  const qc = risk?.queryCount ?? 0;
+  const freqInfo = getQueryFrequencyLevel(qc);
 
   const checks = [
     {
@@ -78,16 +96,9 @@ export default function RiskPage() {
       passedText: '无召回通知',
       failedText: `该批次${risk?.recallInfo?.recallLevel}召回`,
     },
-    {
-      key: 'query',
-      icon: <Hash className="w-6 h-6" />,
-      label: '查询频次',
-      passed: !risk?.duplicateQuery || (risk?.queryCount ?? 0) <= 3,
-      detail: `首次查询时间：${risk?.firstQueryTime}`,
-      passedText: risk?.duplicateQuery ? `已查询 ${risk.queryCount} 次` : '首次查询',
-      failedText: `已被查询 ${risk?.queryCount} 次，请注意甄别`,
-    },
   ];
+
+  const queryCheckPassed = qc < 4;
 
   return (
     <div className="space-y-8">
@@ -96,7 +107,7 @@ export default function RiskPage() {
         <RiskGauge risk={risk} />
         <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
           <div className="p-4 bg-slate-50 rounded-xl">
-            <div className="text-2xl font-bold text-sky-600">{risk?.queryCount ?? 0}</div>
+            <div className="text-2xl font-bold text-sky-600">{qc}</div>
             <div className="text-sm text-slate-500 mt-1">查询次数</div>
           </div>
           <div className={`p-4 rounded-xl ${risk?.isExpired ? 'bg-red-50' : 'bg-emerald-50'}`}>
@@ -159,8 +170,81 @@ export default function RiskPage() {
         </div>
       )}
 
+      <div className={`rounded-2xl shadow-md p-6 border-2 transition-all ${
+        queryCheckPassed
+          ? 'border-emerald-100 bg-emerald-50/50'
+          : 'border-rose-200 bg-rose-50/50'
+      }`}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+            queryCheckPassed ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
+          }`}>
+            <Hash className="w-5 h-5" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-700">查询频次</h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="p-5 bg-white rounded-xl shadow-sm border border-slate-100 text-center">
+            <div className="text-slate-500 text-sm mb-2">累计查询次数</div>
+            <div className={`text-5xl font-bold ${qc >= 6 ? 'text-rose-600' : qc >= 4 ? 'text-amber-600' : 'text-emerald-600'}`}>
+              {qc}
+            </div>
+            <div className="mt-3">
+              <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${freqInfo.color}`}>
+                <TrendingUp className="w-4 h-4 inline mr-1" />
+                {freqInfo.label}
+              </span>
+            </div>
+          </div>
+          <div className="p-5 bg-white rounded-xl shadow-sm border border-slate-100">
+            <div className="text-slate-500 text-sm mb-2">首次查询时间</div>
+            <div className="text-lg font-semibold text-slate-700">
+              {risk?.firstQueryTime || '-'}
+            </div>
+            <div className="mt-4 text-slate-500 text-sm mb-2">最近一次查询时间</div>
+            <div className="text-lg font-semibold text-slate-700">
+              {risk?.lastQueryTime || '-'}
+            </div>
+          </div>
+          <div className="p-5 bg-white rounded-xl shadow-sm border border-slate-100">
+            <div className="text-slate-500 text-sm mb-2">查询频次等级</div>
+            <div className={`text-xl font-bold ${qc >= 6 ? 'text-rose-600' : qc >= 4 ? 'text-amber-600' : 'text-emerald-600'}`}>
+              {freqInfo.label}
+            </div>
+            <div className="mt-4 text-slate-500 text-sm mb-2">同批次平均查询次数</div>
+            <div className="text-xl font-bold text-slate-700">
+              约 {freqInfo.avgCompare} 次
+            </div>
+          </div>
+        </div>
+
+        {freqInfo.level !== 'normal' && (
+          <div className="p-4 rounded-xl border border-rose-200 bg-white">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+              <div className="text-rose-700 text-sm leading-relaxed">
+                同批次其他药品查询次数约 <span className="font-bold">{freqInfo.avgCompare}</span> 次，
+                该码明显高于平均水平，警惕可能为回收包装重复利用或伪造的追溯码，建议谨慎购买或拒收。
+              </div>
+            </div>
+          </div>
+        )}
+
+        {freqInfo.level === 'normal' && (
+          <div className="p-4 rounded-xl border border-emerald-200 bg-white">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+              <div className="text-emerald-700 text-sm leading-relaxed">
+                查询频次正常，符合同批次药品的平均查询水平。
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="bg-white rounded-2xl shadow-md p-6 border border-slate-100">
-        <h3 className="text-lg font-semibold text-slate-700 mb-6">核验详情</h3>
+        <h3 className="text-lg font-semibold text-slate-700 mb-6">其他核验详情</h3>
         <div className="space-y-4">
           {checks.map((check) => (
             <div

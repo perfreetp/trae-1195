@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useParams, Link, useNavigate, Outlet } from 'react-router-dom';
-import { ArrowLeft, Pill, Calendar, MapPin, AlertTriangle, CheckCircle2, FileText, Clock, XCircle } from 'lucide-react';
+import { ArrowLeft, Pill, Calendar, MapPin, AlertTriangle, CheckCircle2, FileText, Clock, XCircle, GitCompare, ShieldAlert } from 'lucide-react';
 import { useQueryStore, useUIStore, useHistoryStore } from '@/store';
 
 export default function DrugPage() {
@@ -65,6 +65,10 @@ export default function DrugPage() {
   }
 
   const riskBanner = (() => {
+    const qc = risk?.queryCount ?? 0;
+    const isHighDuplicateDanger = !risk?.isRecalled && !risk?.isExpired && qc >= 6;
+    const isWarningDuplicate = qc >= 4 && qc < 6;
+
     if (risk?.isRecalled) {
       return {
         bg: 'bg-red-50 border-red-200',
@@ -72,24 +76,49 @@ export default function DrugPage() {
         icon: <AlertTriangle className="w-6 h-6" />,
         title: '⚠️ 产品召回警告',
         subtitle: '该批次药品已启动召回，请立即停止使用并联系购买药店',
+        showDetailBtn: false,
       };
     }
     if (risk?.isExpired) {
       return {
-        bg: 'bg-orange-50 border-orange-200',
-        text: 'text-orange-700',
+        bg: 'bg-red-50 border-red-200',
+        text: 'text-red-700',
         icon: <AlertTriangle className="w-6 h-6" />,
-        title: '⚠️ 药品已过期',
+        title: '🚨 药品已过期',
         subtitle: '该药品已超过有效期，请勿服用',
+        showDetailBtn: false,
+      };
+    }
+    if (isHighDuplicateDanger) {
+      return {
+        bg: 'bg-rose-50 border-rose-300',
+        text: 'text-rose-700',
+        icon: <ShieldAlert className="w-6 h-6" />,
+        title: '🚨 追溯码查询异常',
+        subtitle: `该码在短时间内被多人查询，共${qc}次，首次查询于${risk?.firstQueryTime}，可能为回收包装重复利用或伪造，强烈建议拒收`,
+        showDetailBtn: true,
       };
     }
     if (risk?.level === 'warning') {
+      let subtitle = '';
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      const expiryDate = new Date(drug.expiryDate);
+      const now = new Date();
+      const nearExpiry = expiryDate.getTime() - now.getTime() < thirtyDaysMs;
+      if (nearExpiry) {
+        subtitle = '该药品临近效期（不足30天），请尽快使用';
+      } else if (isWarningDuplicate) {
+        subtitle = `⚠️ 该追溯码近期被频繁查询，共${qc}次，请谨慎购买`;
+      } else {
+        subtitle = `该追溯码已被查询 ${qc} 次，请谨慎使用`;
+      }
       return {
         bg: 'bg-amber-50 border-amber-200',
         text: 'text-amber-700',
         icon: <AlertTriangle className="w-6 h-6" />,
         title: '⚠️ 风险提示',
-        subtitle: `该追溯码已被查询 ${risk.queryCount} 次，请谨慎使用`,
+        subtitle,
+        showDetailBtn: isWarningDuplicate,
       };
     }
     return {
@@ -98,6 +127,7 @@ export default function DrugPage() {
       icon: <CheckCircle2 className="w-6 h-6" />,
       title: '✅ 正品验证通过',
       subtitle: '该药品来源渠道合法，质量检验合格',
+      showDetailBtn: false,
     };
   })();
 
@@ -106,6 +136,7 @@ export default function DrugPage() {
     { path: 'timeline', label: '流向时间轴', icon: <Clock className="w-5 h-5" /> },
     { path: 'risk', label: '风险核验', icon: <AlertTriangle className="w-5 h-5" /> },
     { path: 'guide', label: '用药提示', icon: <FileText className="w-5 h-5" /> },
+    { path: 'compare', label: '批次比对', icon: <GitCompare className="w-5 h-5" /> },
   ];
 
   return (
@@ -124,6 +155,14 @@ export default function DrugPage() {
             >
               联系召回 {risk.recallInfo.contactPhone}
             </a>
+          )}
+          {riskBanner.showDetailBtn && (
+            <button
+              onClick={() => navigate(`/drug/${code}/risk`)}
+              className="px-5 py-2 bg-white/80 backdrop-blur rounded-xl hover:bg-white transition-colors whitespace-nowrap font-medium border border-current/20"
+            >
+              查看核验详情
+            </button>
           )}
         </div>
       </div>

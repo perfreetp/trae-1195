@@ -44,6 +44,7 @@ export interface RiskResult {
   duplicateQuery: boolean;     // 是否重复查询
   queryCount: number;          // 查询次数
   firstQueryTime: string;      // 首次查询时间
+  lastQueryTime: string;       // 最近一次查询时间
   isAuthentic: boolean;        // 是否为正品
   authenticitySource: string;  // 验证来源
 }
@@ -116,6 +117,10 @@ export interface BatchCompareItem {
   queryTime: string;
   isExpired: boolean;
   isRecalled: boolean;
+  expiryDate?: string;
+  daysToExpiry?: number;
+  recallLevel?: '一级' | '二级' | '三级';
+  isCurrentQuery?: boolean;
 }
 
 // Toast消息类型

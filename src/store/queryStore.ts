@@ -35,34 +35,88 @@ const initialState: QueryState = {
   error: null,
 };
 
-const HISTORY_KEY = 'drug_query_history';
+const HISTORY_KEY = 'drug_query_count_v2';
 
-interface HistoryCounter {
+interface QueryCountRecord {
   queryCount: number;
   firstQueryTime: string;
+  lastQueryTime: string;
+  productName: string;
 }
 
-function getQueryHistoryFromStorage(code: string): HistoryCounter {
+type QueryCountStorage = Record<string, QueryCountRecord>;
+
+function isValid20DigitCode(code: string): boolean {
+  return /^\d{20}$/.test(code);
+}
+
+function getQueryCountStorage(): QueryCountStorage {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
-    if (!raw) return { queryCount: 1, firstQueryTime: '' };
-    const history = JSON.parse(raw);
-    const match = history.find((item: any) => item.traceCode === code);
-    if (match) {
-      return {
-        queryCount: (match.queryCount || 0) + 1,
-        firstQueryTime: match.firstQueryTime || match.queryTime || '',
-      };
-    }
-    return { queryCount: 1, firstQueryTime: '' };
+    if (!raw) return {};
+    return JSON.parse(raw);
   } catch {
-    return { queryCount: 1, firstQueryTime: '' };
+    return {};
+  }
+}
+
+function setQueryCountStorage(storage: QueryCountStorage): void {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(storage));
+  } catch {
+  }
+}
+
+function getQueryHistoryFromStorage(code: string): QueryCountRecord {
+  const storage = getQueryCountStorage();
+  const now = new Date().toLocaleString('zh-CN');
+  if (storage[code]) {
+    const record = storage[code];
+    return {
+      queryCount: record.queryCount,
+      firstQueryTime: record.firstQueryTime,
+      lastQueryTime: record.lastQueryTime || now,
+      productName: record.productName,
+    };
+  }
+  return {
+    queryCount: 1,
+    firstQueryTime: now,
+    lastQueryTime: now,
+    productName: '',
+  };
+}
+
+function incrementQueryCountInStorage(code: string, productName: string): QueryCountRecord {
+  const storage = getQueryCountStorage();
+  const now = new Date().toLocaleString('zh-CN');
+  if (storage[code]) {
+    const record = storage[code];
+    const updated: QueryCountRecord = {
+      queryCount: record.queryCount + 1,
+      firstQueryTime: record.firstQueryTime,
+      lastQueryTime: now,
+      productName: productName || record.productName,
+    };
+    storage[code] = updated;
+    setQueryCountStorage(storage);
+    return updated;
+  } else {
+    const newRecord: QueryCountRecord = {
+      queryCount: 1,
+      firstQueryTime: now,
+      lastQueryTime: now,
+      productName: productName || '',
+    };
+    storage[code] = newRecord;
+    setQueryCountStorage(storage);
+    return newRecord;
   }
 }
 
 function computeRisk(
   drug: DrugTraceInfo,
-  history: HistoryCounter,
+  history: QueryCountRecord,
   now: Date = new Date()
 ): RiskResult {
   const expiryDate = new Date(drug.expiryDate);
@@ -78,7 +132,9 @@ function computeRisk(
 
   if (isRecalled || isExpired) {
     level = 'danger';
-  } else if (nearExpiry || (duplicateQuery && history.queryCount > 3)) {
+  } else if (history.queryCount >= 6) {
+    level = 'danger';
+  } else if (nearExpiry || history.queryCount >= 4) {
     level = 'warning';
   }
 
@@ -89,7 +145,8 @@ function computeRisk(
     recallInfo: recallInfo,
     duplicateQuery,
     queryCount: history.queryCount,
-    firstQueryTime: history.firstQueryTime || now.toLocaleString('zh-CN'),
+    firstQueryTime: history.firstQueryTime,
+    lastQueryTime: history.lastQueryTime,
     isAuthentic: auth.authentic,
     authenticitySource: auth.source,
   };
@@ -110,6 +167,12 @@ export const useQueryStore = create<QueryState & QueryActions>((set, get) => ({
     await new Promise((resolve) => setTimeout(resolve, 600));
 
     const drug = getDrugByCode(code);
+    const productName = drug?.productName || '';
+
+    if (isValid20DigitCode(code)) {
+      incrementQueryCountInStorage(code, productName);
+    }
+
     if (!drug) {
       set({
         loading: false,
@@ -126,18 +189,6 @@ export const useQueryStore = create<QueryState & QueryActions>((set, get) => ({
     const nodes = getFlowNodesByCode(code);
     const risk = computeRisk(drug, history);
     const guide = getGuideByProductName(drug.productName) || null;
-
-    try {
-      const raw = localStorage.getItem(HISTORY_KEY);
-      const historyArr = raw ? JSON.parse(raw) : [];
-      const existingIdx = historyArr.findIndex((item: any) => item.traceCode === code);
-      if (existingIdx >= 0) {
-        historyArr[existingIdx].queryCount = history.queryCount;
-        historyArr[existingIdx].queryTime = new Date().toLocaleString('zh-CN');
-      }
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(historyArr));
-    } catch {
-    }
 
     set({
       traceCode: code,

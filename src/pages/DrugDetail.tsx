@@ -1,6 +1,8 @@
-import { useOutletContext } from 'react-router-dom';
-import { Pill, CalendarDays, Factory, FileCheck, Award, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useOutletContext, useNavigate, useParams } from 'react-router-dom';
+import { useMemo } from 'react';
+import { Pill, CalendarDays, Factory, FileCheck, Award, AlertCircle, CheckCircle2, GitCompare } from 'lucide-react';
 import type { DrugTraceInfo, RiskResult } from '@/types';
+import { getBatchCompareList } from '@/mock';
 
 type ContextType = { drug: DrugTraceInfo; risk: RiskResult | null };
 
@@ -18,6 +20,13 @@ function InfoRow({ label, value, icon }: { label: string; value: string; icon?: 
 
 export default function DrugDetail() {
   const { drug, risk } = useOutletContext<ContextType>();
+  const navigate = useNavigate();
+  const { code } = useParams<{ code: string }>();
+
+  const compareCount = useMemo(() => {
+    const list = getBatchCompareList(drug.batchNumber);
+    return list.length;
+  }, [drug.batchNumber]);
 
   const infoGroups = [
     {
@@ -153,6 +162,14 @@ export default function DrugDetail() {
             </div>
           </div>
         </div>
+
+        <button
+          onClick={() => navigate(`/drug/${code}/compare`)}
+          className="w-full flex items-center justify-center gap-2 px-5 py-3.5 bg-gradient-to-r from-sky-500 to-cyan-500 text-white rounded-2xl hover:from-sky-600 hover:to-cyan-600 transition-all font-medium shadow-lg shadow-sky-500/30 hover:shadow-xl hover:shadow-sky-500/40 active:scale-[0.98]"
+        >
+          <GitCompare className="w-5 h-5" />
+          同批次比对（{compareCount}条）
+        </button>
       </div>
     </div>
   );

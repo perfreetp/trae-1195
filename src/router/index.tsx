@@ -7,6 +7,7 @@ import DrugDetail from '@/pages/DrugDetail';
 import TimelinePage from '@/pages/Timeline';
 import RiskPage from '@/pages/Risk';
 import GuidePage from '@/pages/Guide';
+import BatchCompare from '@/pages/BatchCompare';
 import FeedbackPage from '@/pages/Feedback';
 import PharmacistPage from '@/pages/Pharmacist';
 import PrintPage from '@/pages/Print';
@@ -44,6 +45,10 @@ const router = createHashRouter([
           {
             path: 'guide',
             element: <GuidePage />,
+          },
+          {
+            path: 'compare',
+            element: <BatchCompare />,
           },
         ],
       },
