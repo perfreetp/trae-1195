@@ -7,6 +7,7 @@ export default function DrugPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const queryDrug = useQueryStore((s) => s.queryDrug);
+  const consumeJustQueriedFlag = useQueryStore((s) => s.consumeJustQueriedFlag);
   const loading = useQueryStore((s) => s.loading);
   const drug = useQueryStore((s) => s.currentDrug);
   const risk = useQueryStore((s) => s.currentRisk);
@@ -15,14 +16,23 @@ export default function DrugPage() {
   const addHistory = useHistoryStore((s) => s.addHistoryItem);
 
   useEffect(() => {
-    if (code) {
-      queryDrug(code).then(() => {
-        const d = useQueryStore.getState().currentDrug;
-        if (d) {
-          addHistory(d.traceCode, d.productName);
-        }
-      });
+    if (!code) return;
+
+    const justQueried = consumeJustQueriedFlag();
+    if (justQueried === code) {
+      const d = useQueryStore.getState().currentDrug;
+      if (d) {
+        addHistory(d.traceCode, d.productName);
+      }
+      return;
     }
+
+    queryDrug(code).then(() => {
+      const d = useQueryStore.getState().currentDrug;
+      if (d) {
+        addHistory(d.traceCode, d.productName);
+      }
+    });
     return () => {};
   }, [code]);
 

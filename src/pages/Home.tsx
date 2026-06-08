@@ -156,9 +156,7 @@ export default function HomePage() {
     const handleDocumentKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
         clearDebounceTimer();
-        if (inputValue.length > 0) {
-          executeQuery(inputValue);
-        }
+        executeQuery(inputValue);
         return;
       }
 

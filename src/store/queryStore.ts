@@ -16,6 +16,7 @@ interface QueryState {
   currentRisk: RiskResult | null;
   currentGuide: MedicationGuide | null;
   error: string | null;
+  justQueriedCode: string | null;
 }
 
 interface QueryActions {
@@ -23,6 +24,7 @@ interface QueryActions {
   clearAll: () => void;
   setLoading: (loading: boolean) => void;
   queryDrug: (code: string) => Promise<void>;
+  consumeJustQueriedFlag: () => string | null;
 }
 
 const initialState: QueryState = {
@@ -33,6 +35,7 @@ const initialState: QueryState = {
   currentRisk: null,
   currentGuide: null,
   error: null,
+  justQueriedCode: null,
 };
 
 const HISTORY_KEY = 'drug_query_count_v2';
@@ -161,6 +164,12 @@ export const useQueryStore = create<QueryState & QueryActions>((set, get) => ({
 
   setLoading: (loading: boolean) => set({ loading }),
 
+  consumeJustQueriedFlag: () => {
+    const flag = get().justQueriedCode;
+    set({ justQueriedCode: null });
+    return flag;
+  },
+
   queryDrug: async (code: string) => {
     set({ loading: true, error: null });
 
@@ -181,6 +190,7 @@ export const useQueryStore = create<QueryState & QueryActions>((set, get) => ({
         currentNodes: [],
         currentRisk: null,
         currentGuide: null,
+        justQueriedCode: null,
       });
       return;
     }
@@ -198,6 +208,7 @@ export const useQueryStore = create<QueryState & QueryActions>((set, get) => ({
       currentGuide: guide,
       loading: false,
       error: null,
+      justQueriedCode: code,
     });
   },
 }));
