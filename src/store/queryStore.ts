@@ -25,6 +25,17 @@ interface QueryActions {
   setLoading: (loading: boolean) => void;
   queryDrug: (code: string, source?: QuerySource) => Promise<void>;
   consumeJustQueriedFlag: () => string | null;
+  getAllQueryRecords: () => FullQueryRecord[];
+  getRiskLevelForRecord: (record: FullQueryRecord) => 'safe' | 'warning' | 'danger';
+}
+
+export interface FullQueryRecord {
+  traceCode: string;
+  productName: string;
+  queryCount: number;
+  firstQueryTime: string;
+  lastQueryTime: string;
+  queryLogs: QueryEntryLog[];
 }
 
 const initialState: QueryState = {
@@ -194,6 +205,40 @@ export const useQueryStore = create<QueryState & QueryActions>((set, get) => ({
     const flag = get().justQueriedCode;
     set({ justQueriedCode: null });
     return flag;
+  },
+
+  getAllQueryRecords: (): FullQueryRecord[] => {
+    const storage = getQueryCountStorage();
+    const now = new Date().toLocaleString('zh-CN');
+    return Object.keys(storage).map((code) => {
+      const r = storage[code];
+      return {
+        traceCode: code,
+        productName: r.productName || '',
+        queryCount: r.queryCount,
+        firstQueryTime: r.firstQueryTime || now,
+        lastQueryTime: r.lastQueryTime || now,
+        queryLogs: Array.isArray(r.queryLogs) ? r.queryLogs : [],
+      };
+    });
+  },
+
+  getRiskLevelForRecord: (record: FullQueryRecord): 'safe' | 'warning' | 'danger' => {
+    const drug = getDrugByCode(record.traceCode);
+    let isExpired = false;
+    let isRecalled = false;
+    let isNearExpiry = false;
+    if (drug) {
+      const expiry = new Date(drug.expiryDate);
+      const now = new Date();
+      isExpired = expiry < now;
+      isNearExpiry = !isExpired && expiry.getTime() - now.getTime() < 30 * 86400000;
+      isRecalled = !!getRecallInfo(drug.batchNumber);
+    }
+    if (isRecalled || isExpired) return 'danger';
+    if (record.queryCount >= 6) return 'danger';
+    if (isNearExpiry || record.queryCount >= 4) return 'warning';
+    return 'safe';
   },
 
   queryDrug: async (code: string, source: QuerySource = 'direct_link') => {

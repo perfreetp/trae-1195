@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Search, Clock, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Search, Clock, Trash2, X, FileDown } from 'lucide-react';
 import { useHistoryStore, useQueryStore, useUIStore } from '@/store';
 
 function isValidTraceCode(code: string): { valid: boolean; message?: string } {
@@ -9,6 +9,29 @@ function isValidTraceCode(code: string): { valid: boolean; message?: string } {
   if (code.length !== 20) return { valid: false, message: '追溯码必须为20位数字' };
   if (!code.startsWith('81')) return { valid: false, message: '追溯码必须以81开头' };
   return { valid: true };
+}
+
+function escapeCSV(v: string | number): string {
+  const s = String(v ?? '');
+  if (/[",\n\r]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function triggerCSVDownload(filename: string, rows: (string | number)[][], headers: string[]) {
+  const bom = '\uFEFF';
+  const lines = [headers, ...rows].map((row) => row.map(escapeCSV).join(','));
+  const csv = bom + lines.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export default function ManualPage() {
@@ -20,9 +43,39 @@ export default function ManualPage() {
   const removeHistory = useHistoryStore((s) => s.removeHistory);
   const clearAllHistory = useHistoryStore((s) => s.clearAllHistory);
   const queryDrug = useQueryStore((s) => s.queryDrug);
+  const getAllQueryRecords = useQueryStore((s) => s.getAllQueryRecords);
+  const getRiskLevelForRecord = useQueryStore((s) => s.getRiskLevelForRecord);
   const loading = useQueryStore((s) => s.loading);
   const currentDrug = useQueryStore((s) => s.currentDrug);
   const showToast = useUIStore((s) => s.showToast);
+
+  const handleExportAll = () => {
+    const records = getAllQueryRecords();
+    const levelMap = { safe: '安全', warning: '注意', danger: '风险' };
+    const headers = [
+      '序号', '追溯码', '药品名称', '累计查询次数', '首次查询时间',
+      '最近查询时间', '当前风险等级', '最近5次入口来源', '导出时间',
+    ];
+    const rows: (string | number)[][] = records.map((r, i) => {
+      const level = getRiskLevelForRecord(r);
+      const sources = r.queryLogs.slice(0, 5).map((l) => l.sourceLabel).join(' → ') || '-';
+      return [
+        i + 1, r.traceCode, r.productName,
+        String(r.queryCount), r.firstQueryTime, r.lastQueryTime,
+        levelMap[level], sources, new Date().toLocaleString('zh-CN'),
+      ];
+    });
+    if (!rows.length) {
+      showToast('暂无查询记录可导出', 'error');
+      return;
+    }
+    triggerCSVDownload(
+      `药品追溯查询记录汇总_${Date.now()}.csv`,
+      rows,
+      headers
+    );
+    showToast(`已导出 ${rows.length} 条查询记录`, 'success');
+  };
 
   const handleQuery = async () => {
     const validation = isValidTraceCode(code.trim());
@@ -106,15 +159,26 @@ export default function ManualPage() {
               <Clock className="w-6 h-6 text-slate-500" />
               <h2 className="text-xl font-semibold text-slate-700">历史查询</h2>
             </div>
-            {historyList.length > 0 && (
-              <button
-                onClick={clearAllHistory}
-                className="text-sm text-slate-400 hover:text-red-500 transition-colors flex items-center gap-1"
-              >
-                <Trash2 className="w-4 h-4" />
-                清空全部
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {historyList.length > 0 && (
+                <button
+                  onClick={handleExportAll}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-xl border border-sky-200 text-sm font-medium transition-colors"
+                >
+                  <FileDown className="w-4 h-4" />
+                  导出全部记录
+                </button>
+              )}
+              {historyList.length > 0 && (
+                <button
+                  onClick={clearAllHistory}
+                  className="text-sm text-slate-400 hover:text-red-500 transition-colors flex items-center gap-1"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  清空全部
+                </button>
+              )}
+            </div>
           </div>
 
           {historyList.length === 0 ? (

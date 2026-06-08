@@ -66,6 +66,7 @@ export interface RiskResult {
 
 // 召回信息
 export interface RecallInfo {
+  batchNumber?: string;
   recallLevel: '一级' | '二级' | '三级';
   recallReason: string;
   recallDate: string;

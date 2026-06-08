@@ -92,9 +92,9 @@ export default function DrugPage() {
   const banners: BannerItem[] = useMemo(() => {
     const list: BannerItem[] = [];
     const qc = risk?.queryCount ?? 0;
-    const isHighDuplicateDanger = !risk?.isRecalled && !risk?.isExpired && qc >= 6;
+    const isHighDuplicateDanger = qc >= 6;
     const isWarningDuplicate = qc >= 4 && qc < 6;
-    const nearExpiry = risk?.isNearExpiry && !risk?.isExpired && !risk?.isRecalled;
+    const nearExpiry = risk?.isNearExpiry && !risk?.isExpired;
 
     if (risk?.isRecalled) {
       list.push({
@@ -103,8 +103,8 @@ export default function DrugPage() {
         text: 'text-red-700',
         icon: <AlertTriangle className="w-6 h-6" />,
         title: '⚠️ 产品召回警告',
-        subtitle: '该批次药品已启动召回，请立即停止使用并联系购买药店',
-        showDetailBtn: false,
+        subtitle: `该批次药品（批号${risk.recallInfo?.batchNumber || drug.batchNumber}）已启动${risk.recallInfo?.recallLevel || '产品'}召回，请立即停止使用并联系购买药店`,
+        showDetailBtn: true,
       });
     }
     if (risk?.isExpired) {
@@ -114,8 +114,8 @@ export default function DrugPage() {
         text: 'text-red-700',
         icon: <AlertTriangle className="w-6 h-6" />,
         title: '🚨 药品已过期',
-        subtitle: '该药品已超过有效期，请勿服用',
-        showDetailBtn: false,
+        subtitle: `有效期至 ${drug.expiryDate}，该药品已超过有效期，请勿服用`,
+        showDetailBtn: true,
       });
     }
     if (isHighDuplicateDanger) {
@@ -130,17 +130,19 @@ export default function DrugPage() {
       });
     }
     if (nearExpiry) {
+      const expiry = new Date(drug.expiryDate);
+      const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
       list.push({
         key: 'near-expiry',
         bg: 'bg-amber-50 border-amber-200',
         text: 'text-amber-700',
         icon: <AlertTriangle className="w-6 h-6" />,
         title: '⚠️ 临近效期',
-        subtitle: '该药品临近效期（不足30天），请尽快使用',
-        showDetailBtn: false,
+        subtitle: `距到期还剩约 ${Math.max(daysLeft, 0)} 天，请尽快使用`,
+        showDetailBtn: true,
       });
     }
-    if (isWarningDuplicate && !isHighDuplicateDanger) {
+    if (isWarningDuplicate) {
       list.push({
         key: 'dup-warn',
         bg: 'bg-amber-50 border-amber-200',
@@ -163,7 +165,7 @@ export default function DrugPage() {
       });
     }
     return list;
-  }, [risk]);
+  }, [risk, drug]);
 
   const navItems = [
     { path: '', label: '药品档案', icon: <Pill className="w-5 h-5" /> },

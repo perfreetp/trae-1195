@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, QrCode, ShieldCheck, Clock, ArrowRight, Factory, ClipboardCheck, Warehouse, Truck, Store, Search } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -21,6 +21,88 @@ export default function PrintPage() {
     }
   }, [code]);
 
+  // 稳定凭证编号：基于traceCode + lastQueryTime 做哈希生成，保证同码同时段一致
+  const certificateId = useMemo(() => {
+    const base = `${drug?.traceCode || code}-${risk?.lastQueryTime || 'new'}`;
+    let hash = 0;
+    for (let i = 0; i < base.length; i++) {
+      hash = (hash * 31 + base.charCodeAt(i)) & 0xffffffff;
+    }
+    const stablePart = Math.abs(hash).toString(36).padStart(8, '0').toUpperCase().slice(0, 8);
+    const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+    return `DT-${datePart}-${stablePart}`;
+  }, [drug?.traceCode, risk?.lastQueryTime, code]);
+
+  const verifyUrl = `${window.location.origin}/#/drug/${drug?.traceCode || code}`;
+
+  // 风险项清单（复用 Risk 页逻辑）
+  const riskItems: Array<{
+    label: string;
+    level: 'safe' | 'warn' | 'danger';
+    detail: string;
+  }> = useMemo(() => {
+    const items: Array<{ label: string; level: 'safe' | 'warn' | 'danger'; detail: string }> = [];
+    const qc = risk?.queryCount ?? 0;
+    if (risk?.isRecalled && risk.recallInfo) {
+      items.push({
+        label: '⚠️ 产品召回',
+        level: 'danger',
+        detail: `${risk.recallInfo.recallLevel} · 批次 ${risk.recallInfo.batchNumber || '不详'} · ${risk.recallInfo.recallDate || '近期'}`,
+      });
+    }
+    if (risk?.isExpired) {
+      const daysToExpiry = Math.max(
+        1,
+        Math.abs(Math.ceil((new Date(drug.expiryDate).getTime() - Date.now()) / 86400000))
+      );
+      items.push({
+        label: '🚨 已过期',
+        level: 'danger',
+        detail: `有效期至 ${drug.expiryDate}，已过期约 ${daysToExpiry} 天`,
+      });
+    }
+    if (qc >= 6) {
+      items.push({
+        label: '🚨 频繁查询',
+        level: 'danger',
+        detail: `累计查询 ${qc} 次，同批次平均约 2 次，异常偏高`,
+      });
+    }
+    if (risk?.isNearExpiry && !risk?.isExpired) {
+      const daysLeft = Math.max(
+        0,
+        Math.ceil((new Date(drug.expiryDate).getTime() - Date.now()) / 86400000)
+      );
+      items.push({
+        label: '▲ 临近效期',
+        level: 'warn',
+        detail: `剩余约 ${daysLeft} 天（＜ 30 天），建议尽快使用`,
+      });
+    }
+    if (qc >= 4 && qc < 6) {
+      items.push({
+        label: '▲ 重复查询',
+        level: 'warn',
+        detail: `累计查询 ${qc} 次，略高于平均水平，建议核对包装`,
+      });
+    }
+    if (!risk?.isAuthentic) {
+      items.push({
+        label: '🚨 真伪异常',
+        level: 'danger',
+        detail: `未在 ${risk?.authenticitySource || '追溯平台'} 查询到正品登记`,
+      });
+    }
+    if (items.length === 0) {
+      items.push({
+        label: '✅ 核验通过',
+        level: 'safe',
+        detail: '真伪、效期、召回、查询频次全部正常，药品来源合法可放心使用',
+      });
+    }
+    return items;
+  }, [risk, drug]);
+
   const handlePrint = () => {
     window.print();
   };
@@ -35,8 +117,6 @@ export default function PrintPage() {
       </div>
     );
   }
-
-  const verifyUrl = `${window.location.origin}/#/drug/${drug.traceCode}`;
 
   return (
     <div className="min-h-screen bg-slate-200 py-8">
@@ -71,12 +151,27 @@ export default function PrintPage() {
                 </h1>
               </div>
               <p className="text-slate-600">Drug Traceability Verification Certificate</p>
-              <div className="mt-4 flex justify-center gap-8 text-sm text-slate-500">
-                <span className="flex items-center gap-1.5">
-                  <Clock className="w-4 h-4" />
-                  查询时间：{printTime}
-                </span>
-                <span>凭证编号：{Date.now().toString().slice(-10)}</span>
+              <div className="mt-5 grid grid-cols-2 md:grid-cols-5 gap-4 text-xs text-slate-600 border border-slate-200 rounded-xl p-3 bg-slate-50">
+                <div>
+                  <div className="text-slate-400 mb-1">凭证编号</div>
+                  <div className="font-mono font-semibold text-slate-800">{certificateId}</div>
+                </div>
+                <div>
+                  <div className="text-slate-400 mb-1">首次查询时间</div>
+                  <div className="font-medium text-slate-700">{risk?.firstQueryTime || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-slate-400 mb-1">最近追溯查询</div>
+                  <div className="font-medium text-slate-700">{risk?.lastQueryTime || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-slate-400 mb-1">本次查询时间</div>
+                  <div className="font-medium text-slate-700">{risk?.lastQueryTime || printTime}</div>
+                </div>
+                <div>
+                  <div className="text-slate-400 mb-1">凭证生成时间</div>
+                  <div className="font-medium text-slate-700">{printTime}</div>
+                </div>
               </div>
             </div>
 
@@ -89,6 +184,12 @@ export default function PrintPage() {
                     <span className="ml-2 text-base font-normal text-slate-500">
                       （{drug.brandName}）
                     </span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-slate-400">追溯码</span>
+                    <code className="font-mono font-semibold bg-slate-100 rounded-md px-2 py-1 text-slate-700 tracking-wider">
+                      {drug.traceCode}
+                    </code>
                   </div>
                 </div>
 
@@ -114,19 +215,25 @@ export default function PrintPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col items-center justify-center bg-slate-50 rounded-2xl p-6">
-                <div className="bg-white p-4 rounded-xl shadow-md">
+              <div className="flex flex-col items-center justify-center bg-slate-50 rounded-2xl p-6 border border-slate-200">
+                <div className="bg-white p-4 rounded-xl shadow-md border border-slate-100">
                   <QRCodeSVG
                     value={verifyUrl}
-                    size={140}
+                    size={132}
                     level="H"
                     includeMargin={false}
                   />
                 </div>
-                <div className="mt-4 text-center">
-                  <div className="text-xs text-slate-500 mb-1">扫码再次验证</div>
-                  <div className="font-mono text-xs text-slate-600 break-all text-left">
-                    {drug.traceCode}
+                <div className="mt-4 text-center w-full">
+                  <div className="text-xs text-slate-500 mb-1.5">扫码或点击链接复核凭证</div>
+                  <a
+                    href={verifyUrl}
+                    className="text-sky-600 hover:text-sky-700 hover:underline text-[11px] font-mono break-all leading-snug block"
+                  >
+                    {verifyUrl}
+                  </a>
+                  <div className="mt-2.5 text-xs text-slate-400">
+                    复核码：<span className="font-mono font-semibold text-slate-600">{certificateId}</span>
                   </div>
                 </div>
               </div>
@@ -141,10 +248,10 @@ export default function PrintPage() {
                     {risk?.isAuthentic ? '✓ 正品' : '✗ 异常'}
                   </div>
                 </div>
-                <div className={`p-4 rounded-xl ${!risk?.isExpired ? 'bg-emerald-50 border border-emerald-200' : 'bg-red-50 border border-red-200'}`}>
+                <div className={`p-4 rounded-xl ${!risk?.isExpired ? (risk?.isNearExpiry ? 'bg-amber-50 border border-amber-200' : 'bg-emerald-50 border border-emerald-200') : 'bg-red-50 border border-red-200'}`}>
                   <div className="text-xs text-slate-500 mb-1">有效期状态</div>
-                  <div className={`font-bold ${!risk?.isExpired ? 'text-emerald-700' : 'text-red-700'}`}>
-                    {!risk?.isExpired ? '✓ 在有效期' : '✗ 已过期'}
+                  <div className={`font-bold ${!risk?.isExpired ? (risk?.isNearExpiry ? 'text-amber-700' : 'text-emerald-700') : 'text-red-700'}`}>
+                    {risk?.isExpired ? '✗ 已过期' : risk?.isNearExpiry ? '▲ 临近效期' : '✓ 在有效期'}
                   </div>
                 </div>
                 <div className={`p-4 rounded-xl ${!risk?.isRecalled ? 'bg-emerald-50 border border-emerald-200' : 'bg-red-50 border border-red-200'}`}>
@@ -183,6 +290,35 @@ export default function PrintPage() {
                 </div>
               </div>
 
+              {/* 风险项清单：纸质版可见具体原因 */}
+              <div className="mt-5 border border-slate-200 rounded-xl overflow-hidden">
+                <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200">
+                  <span className="text-sm font-bold text-slate-700">风险项清单</span>
+                  <span className="text-xs text-slate-500 ml-2">共 {riskItems.length} 项，纸质凭证留档请核对</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {riskItems.map((item, idx) => (
+                    <div key={`${item.label}-${idx}`} className="flex items-start gap-3 px-4 py-3">
+                      <div
+                        className={`shrink-0 px-2 py-0.5 rounded-md text-xs font-bold ${
+                          item.level === 'danger'
+                            ? 'bg-red-100 text-red-700'
+                            : item.level === 'warn'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
+                        {item.level === 'danger' ? '风险' : item.level === 'warn' ? '提示' : '正常'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-slate-800 text-sm">{item.label}</div>
+                        <div className="text-xs text-slate-600 mt-0.5 leading-relaxed">{item.detail}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {(risk?.level !== 'safe') && (
                 <div className={`mt-5 p-4 rounded-xl border-2 ${
                   risk?.level === 'danger' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'
@@ -190,7 +326,7 @@ export default function PrintPage() {
                   <div className={`font-bold mb-2 text-sm ${
                     risk?.level === 'danger' ? 'text-red-700' : 'text-amber-700'
                   }`}>
-                    风险说明
+                    综合说明
                   </div>
                   <div className="text-sm leading-relaxed text-slate-700 space-y-1">
                     {risk?.isRecalled && (
@@ -199,14 +335,17 @@ export default function PrintPage() {
                     {risk?.isExpired && (
                       <div>• 该药品已超过有效期，请勿服用</div>
                     )}
-                    {(risk?.queryCount ?? 0) >= 6 && !risk?.isRecalled && !risk?.isExpired && (
+                    {(risk?.queryCount ?? 0) >= 6 && (
                       <div>• 该追溯码累计查询 {risk?.queryCount} 次，明显偏高（同批次平均约 2 次），警惕可能为回收包装重复利用或伪造追溯码</div>
                     )}
                     {risk?.isNearExpiry && !risk?.isExpired && (
                       <div>• 该药品临近效期（不足 30 天），请尽快使用</div>
                     )}
-                    {(risk?.queryCount ?? 0) >= 4 && (risk?.queryCount ?? 0) < 6 && (risk?.isNearExpiry ? false : true) && !risk?.isRecalled && !risk?.isExpired && (
+                    {(risk?.queryCount ?? 0) >= 4 && (risk?.queryCount ?? 0) < 6 && !risk?.isNearExpiry && !risk?.isRecalled && !risk?.isExpired && (
                       <div>• 该追溯码累计查询 {risk?.queryCount} 次，略高于平均水平，建议谨慎购买</div>
+                    )}
+                    {!risk?.isAuthentic && (
+                      <div>• 真伪验证未通过，请勿服用并联系购买渠道处理</div>
                     )}
                   </div>
                 </div>
