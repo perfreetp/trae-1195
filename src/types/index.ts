@@ -35,6 +35,19 @@ export interface FlowNode {
   status: 'completed' | 'in_progress' | 'pending';
 }
 
+export type QuerySource =
+  | 'home_scan'
+  | 'manual_input'
+  | 'history'
+  | 'direct_link'
+  | 'print_page';
+
+export interface QueryEntryLog {
+  source: QuerySource;
+  sourceLabel: string;
+  queryTime: string;
+}
+
 // 风险检测结果
 export interface RiskResult {
   level: 'safe' | 'warning' | 'danger';
@@ -47,6 +60,8 @@ export interface RiskResult {
   lastQueryTime: string;       // 最近一次查询时间
   isAuthentic: boolean;        // 是否为正品
   authenticitySource: string;  // 验证来源
+  queryLogs: QueryEntryLog[];  // 最近几次查询入口来源记录
+  isNearExpiry?: boolean;      // 是否临期（不足30天）
 }
 
 // 召回信息

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, QrCode, ShieldCheck, Clock } from 'lucide-react';
+import { ArrowLeft, Printer, QrCode, ShieldCheck, Clock, ArrowRight, Factory, ClipboardCheck, Warehouse, Truck, Store, Search } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useQueryStore } from '@/store';
+import type { FlowNode } from '@/types';
 
 export default function PrintPage() {
   const { code } = useParams<{ code: string }>();
@@ -11,11 +12,12 @@ export default function PrintPage() {
   const loading = useQueryStore((s) => s.loading);
   const drug = useQueryStore((s) => s.currentDrug);
   const risk = useQueryStore((s) => s.currentRisk);
+  const flowNodes = useQueryStore((s) => s.currentNodes);
   const [printTime] = useState(new Date().toLocaleString('zh-CN'));
 
   useEffect(() => {
     if (code) {
-      queryDrug(code);
+      queryDrug(code, 'print_page');
     }
   }, [code]);
 
@@ -132,7 +134,7 @@ export default function PrintPage() {
 
             <div className="border-t-2 border-slate-200 pt-6 mb-8">
               <h3 className="text-lg font-bold text-slate-800 mb-4">核验结果</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 <div className={`p-4 rounded-xl ${risk?.isAuthentic ? 'bg-emerald-50 border border-emerald-200' : 'bg-red-50 border border-red-200'}`}>
                   <div className="text-xs text-slate-500 mb-1">真伪验证</div>
                   <div className={`font-bold ${risk?.isAuthentic ? 'text-emerald-700' : 'text-red-700'}`}>
@@ -152,11 +154,105 @@ export default function PrintPage() {
                   </div>
                 </div>
                 <div className="p-4 rounded-xl bg-sky-50 border border-sky-200">
-                  <div className="text-xs text-slate-500 mb-1">累计查询</div>
+                  <div className="text-xs text-slate-500 mb-1">累计查询次数</div>
                   <div className="font-bold text-sky-700">{risk?.queryCount ?? 0} 次</div>
                 </div>
+                <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200">
+                  <div className="text-xs text-slate-500 mb-1">首次查询时间</div>
+                  <div className="font-bold text-indigo-700 text-sm">{risk?.firstQueryTime || '-'}</div>
+                </div>
+                <div className="p-4 rounded-xl bg-violet-50 border border-violet-200">
+                  <div className="text-xs text-slate-500 mb-1">最近查询时间</div>
+                  <div className="font-bold text-violet-700 text-sm">{risk?.lastQueryTime || '-'}</div>
+                </div>
+                <div className={`p-4 rounded-xl md:col-span-1 ${
+                  risk?.level === 'danger' ? 'bg-red-50 border border-red-200' :
+                  risk?.level === 'warning' ? 'bg-amber-50 border border-amber-200' :
+                  'bg-emerald-50 border border-emerald-200'
+                }`}>
+                  <div className="text-xs text-slate-500 mb-1">风险综合结论</div>
+                  <div className={`font-bold ${
+                    risk?.level === 'danger' ? 'text-red-700' :
+                    risk?.level === 'warning' ? 'text-amber-700' :
+                    'text-emerald-700'
+                  }`}>
+                    {risk?.level === 'danger' ? '⚠ 存在风险' :
+                     risk?.level === 'warning' ? '▲ 注意提示' :
+                     '✓ 综合安全'}
+                  </div>
+                </div>
               </div>
+
+              {(risk?.level !== 'safe') && (
+                <div className={`mt-5 p-4 rounded-xl border-2 ${
+                  risk?.level === 'danger' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'
+                }`}>
+                  <div className={`font-bold mb-2 text-sm ${
+                    risk?.level === 'danger' ? 'text-red-700' : 'text-amber-700'
+                  }`}>
+                    风险说明
+                  </div>
+                  <div className="text-sm leading-relaxed text-slate-700 space-y-1">
+                    {risk?.isRecalled && (
+                      <div>• 该批次药品已启动召回，请立即停止使用并联系购买药店</div>
+                    )}
+                    {risk?.isExpired && (
+                      <div>• 该药品已超过有效期，请勿服用</div>
+                    )}
+                    {(risk?.queryCount ?? 0) >= 6 && !risk?.isRecalled && !risk?.isExpired && (
+                      <div>• 该追溯码累计查询 {risk?.queryCount} 次，明显偏高（同批次平均约 2 次），警惕可能为回收包装重复利用或伪造追溯码</div>
+                    )}
+                    {risk?.isNearExpiry && !risk?.isExpired && (
+                      <div>• 该药品临近效期（不足 30 天），请尽快使用</div>
+                    )}
+                    {(risk?.queryCount ?? 0) >= 4 && (risk?.queryCount ?? 0) < 6 && (risk?.isNearExpiry ? false : true) && !risk?.isRecalled && !risk?.isExpired && (
+                      <div>• 该追溯码累计查询 {risk?.queryCount} 次，略高于平均水平，建议谨慎购买</div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
+
+            {(flowNodes && flowNodes.length > 0) && (
+              <div className="border-t-2 border-slate-200 pt-6 mb-8">
+                <h3 className="text-lg font-bold text-slate-800 mb-4">流向摘要</h3>
+                <div className="bg-slate-50 rounded-xl p-5 border border-slate-200">
+                  <div className="flex flex-wrap items-center gap-2 md:gap-3">
+                    {flowNodes.map((node: FlowNode, idx: number) => {
+                      const iconByStage: Record<string, React.ReactNode> = {
+                        production: <Factory className="w-4 h-4" />,
+                        inspection: <ClipboardCheck className="w-4 h-4" />,
+                        warehouse: <Warehouse className="w-4 h-4" />,
+                        wholesale: <Warehouse className="w-4 h-4" />,
+                        transport: <Truck className="w-4 h-4" />,
+                        retail: <Store className="w-4 h-4" />,
+                      };
+                      const icon = iconByStage[node.nodeType] || <Store className="w-4 h-4" />;
+                      return (
+                        <div key={node.id} className="flex items-center gap-2">
+                          <div className="bg-white rounded-lg px-3 py-2 border border-slate-200 shadow-sm min-w-[88px] text-center">
+                            <div className="flex items-center justify-center gap-1 text-sky-600 mb-0.5">
+                              {icon}
+                              <span className="text-[11px] font-semibold text-slate-700">{node.nodeName}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 leading-tight">{node.timestamp}</div>
+                          </div>
+                          {idx < flowNodes.length - 1 && (
+                            <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0 hidden md:block" />
+                          )}
+                          {idx < flowNodes.length - 1 && (
+                            <ArrowRight className="w-3 h-3 text-slate-400 shrink-0 md:hidden" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-4 text-[11px] text-slate-500 leading-relaxed">
+                    追溯链路：{flowNodes.map(n => n.nodeName).join(' → ')}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="border-t-2 border-slate-200 pt-6 mb-8">
               <h3 className="text-lg font-bold text-slate-800 mb-4">检验信息</h3>

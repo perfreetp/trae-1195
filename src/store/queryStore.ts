@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { DrugTraceInfo, FlowNode, RiskResult, MedicationGuide } from '@/types';
+import type { DrugTraceInfo, FlowNode, QueryEntryLog, QuerySource, RiskResult, MedicationGuide } from '@/types';
 import {
   getDrugByCode,
   getFlowNodesByCode,
@@ -23,7 +23,7 @@ interface QueryActions {
   setTraceCode: (code: string) => void;
   clearAll: () => void;
   setLoading: (loading: boolean) => void;
-  queryDrug: (code: string) => Promise<void>;
+  queryDrug: (code: string, source?: QuerySource) => Promise<void>;
   consumeJustQueriedFlag: () => string | null;
 }
 
@@ -45,9 +45,18 @@ interface QueryCountRecord {
   firstQueryTime: string;
   lastQueryTime: string;
   productName: string;
+  queryLogs: QueryEntryLog[];
 }
 
 type QueryCountStorage = Record<string, QueryCountRecord>;
+
+const SOURCE_LABEL_MAP: Record<QuerySource, string> = {
+  home_scan: '首页扫码',
+  manual_input: '手动输入',
+  history: '历史记录',
+  direct_link: '直接打开链接',
+  print_page: '打印凭证',
+};
 
 function isValid20DigitCode(code: string): boolean {
   return /^\d{20}$/.test(code);
@@ -80,6 +89,7 @@ function getQueryHistoryFromStorage(code: string): QueryCountRecord {
       firstQueryTime: record.firstQueryTime,
       lastQueryTime: record.lastQueryTime || now,
       productName: record.productName,
+      queryLogs: Array.isArray(record.queryLogs) ? record.queryLogs : [],
     };
   }
   return {
@@ -87,19 +97,32 @@ function getQueryHistoryFromStorage(code: string): QueryCountRecord {
     firstQueryTime: now,
     lastQueryTime: now,
     productName: '',
+    queryLogs: [],
   };
 }
 
-function incrementQueryCountInStorage(code: string, productName: string): QueryCountRecord {
+function incrementQueryCountInStorage(
+  code: string,
+  productName: string,
+  source: QuerySource = 'direct_link'
+): QueryCountRecord {
   const storage = getQueryCountStorage();
   const now = new Date().toLocaleString('zh-CN');
+  const newLog: QueryEntryLog = {
+    source,
+    sourceLabel: SOURCE_LABEL_MAP[source],
+    queryTime: now,
+  };
   if (storage[code]) {
     const record = storage[code];
+    const oldLogs = Array.isArray(record.queryLogs) ? record.queryLogs : [];
+    const updatedLogs = [newLog, ...oldLogs].slice(0, 5);
     const updated: QueryCountRecord = {
       queryCount: record.queryCount + 1,
       firstQueryTime: record.firstQueryTime,
       lastQueryTime: now,
       productName: productName || record.productName,
+      queryLogs: updatedLogs,
     };
     storage[code] = updated;
     setQueryCountStorage(storage);
@@ -110,6 +133,7 @@ function incrementQueryCountInStorage(code: string, productName: string): QueryC
       firstQueryTime: now,
       lastQueryTime: now,
       productName: productName || '',
+      queryLogs: [newLog],
     };
     storage[code] = newRecord;
     setQueryCountStorage(storage);
@@ -152,6 +176,8 @@ function computeRisk(
     lastQueryTime: history.lastQueryTime,
     isAuthentic: auth.authentic,
     authenticitySource: auth.source,
+    queryLogs: history.queryLogs,
+    isNearExpiry: nearExpiry,
   };
 }
 
@@ -170,7 +196,7 @@ export const useQueryStore = create<QueryState & QueryActions>((set, get) => ({
     return flag;
   },
 
-  queryDrug: async (code: string) => {
+  queryDrug: async (code: string, source: QuerySource = 'direct_link') => {
     set({ loading: true, error: null });
 
     await new Promise((resolve) => setTimeout(resolve, 600));
@@ -179,7 +205,7 @@ export const useQueryStore = create<QueryState & QueryActions>((set, get) => ({
     const productName = drug?.productName || '';
 
     if (isValid20DigitCode(code)) {
-      incrementQueryCountInStorage(code, productName);
+      incrementQueryCountInStorage(code, productName, source);
     }
 
     if (!drug) {

@@ -1,6 +1,6 @@
 import { useOutletContext } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, ShieldCheck, Clock, AlertCircle, Phone, FileWarning, Hash, TrendingUp } from 'lucide-react';
-import type { DrugTraceInfo, RiskResult } from '@/types';
+import { AlertTriangle, CheckCircle2, ShieldCheck, Clock, AlertCircle, Phone, FileWarning, Hash, TrendingUp, QrCode, Search, History, Link as LinkIcon, Printer } from 'lucide-react';
+import type { DrugTraceInfo, QueryEntryLog, RiskResult } from '@/types';
 
 type ContextType = { drug: DrugTraceInfo; risk: RiskResult | null };
 
@@ -239,6 +239,67 @@ export default function RiskPage() {
                 查询频次正常，符合同批次药品的平均查询水平。
               </div>
             </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-md p-6 border border-slate-100">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center shrink-0">
+            <History className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-700">最近查询入口来源</h3>
+            <p className="text-sm text-slate-500">展示该追溯码最近 5 次查询的入口途径，帮您了解查询来源情况</p>
+          </div>
+        </div>
+
+        {(risk?.queryLogs && risk.queryLogs.length > 0) ? (
+          <div className="space-y-3">
+            {risk.queryLogs.map((log: QueryEntryLog, idx: number) => {
+              const iconMap: Record<QueryEntryLog['source'], { icon: React.ReactNode; bg: string; color: string }> = {
+                home_scan: {
+                  icon: <QrCode className="w-5 h-5" />, bg: 'bg-emerald-100', color: 'text-emerald-600' },
+                manual_input: {
+                  icon: <Search className="w-5 h-5" />, bg: 'bg-sky-100', color: 'text-sky-600' },
+                history: {
+                  icon: <History className="w-5 h-5" />, bg: 'bg-amber-100', color: 'text-amber-600' },
+                direct_link: {
+                  icon: <LinkIcon className="w-5 h-5" />, bg: 'bg-violet-100', color: 'text-violet-600' },
+                print_page: {
+                  icon: <Printer className="w-5 h-5" />, bg: 'bg-slate-100', color: 'text-slate-600' },
+              };
+              const cfg = iconMap[log.source] || iconMap.direct_link;
+              return (
+                <div key={`${log.source}-${log.queryTime}-${idx}`} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${cfg.bg} ${cfg.color}`}>
+                    {cfg.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3">
+                      <div className="font-medium text-slate-700">
+                        {log.sourceLabel}
+                      </div>
+                      {idx === 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-600 shrink-0">
+                          本次
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-slate-500 mt-0.5">
+                      查询时间：{log.queryTime}
+                    </div>
+                  </div>
+                  <div className="text-sm font-mono text-slate-400 shrink-0">
+                    #{risk.queryLogs.length - idx}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-sm text-slate-500 p-8 text-center bg-slate-50 rounded-xl">
+            暂无查询入口记录
           </div>
         )}
       </div>

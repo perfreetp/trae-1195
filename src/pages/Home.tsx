@@ -84,7 +84,7 @@ export default function HomePage() {
     setScanStatus('querying');
     setErrorDetail(null);
 
-    await queryDrug(code);
+    await queryDrug(code, 'home_scan');
 
     const state = useQueryStore.getState();
     if (state.currentDrug) {

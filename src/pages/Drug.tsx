@@ -1,11 +1,13 @@
-import { useEffect } from 'react';
-import { useParams, Link, useNavigate, Outlet } from 'react-router-dom';
+import { useEffect, useMemo } from 'react';
+import { useParams, Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { ArrowLeft, Pill, Calendar, MapPin, AlertTriangle, CheckCircle2, FileText, Clock, XCircle, GitCompare, ShieldAlert } from 'lucide-react';
 import { useQueryStore, useUIStore, useHistoryStore } from '@/store';
+import type { QuerySource } from '@/types';
 
 export default function DrugPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryDrug = useQueryStore((s) => s.queryDrug);
   const consumeJustQueriedFlag = useQueryStore((s) => s.consumeJustQueriedFlag);
   const loading = useQueryStore((s) => s.loading);
@@ -18,6 +20,9 @@ export default function DrugPage() {
   useEffect(() => {
     if (!code) return;
 
+    const locState = location.state as { source?: QuerySource } | null;
+    const sourceFromState = locState?.source;
+
     const justQueried = consumeJustQueriedFlag();
     if (justQueried === code) {
       const d = useQueryStore.getState().currentDrug;
@@ -27,14 +32,14 @@ export default function DrugPage() {
       return;
     }
 
-    queryDrug(code).then(() => {
+    queryDrug(code, sourceFromState || 'direct_link').then(() => {
       const d = useQueryStore.getState().currentDrug;
       if (d) {
         addHistory(d.traceCode, d.productName);
       }
     });
     return () => {};
-  }, [code]);
+  }, [code, location.state]);
 
   if (loading) {
     return (
@@ -74,72 +79,91 @@ export default function DrugPage() {
     );
   }
 
-  const riskBanner = (() => {
+  interface BannerItem {
+    key: string;
+    bg: string;
+    text: string;
+    icon: React.ReactNode;
+    title: string;
+    subtitle: string;
+    showDetailBtn: boolean;
+  }
+
+  const banners: BannerItem[] = useMemo(() => {
+    const list: BannerItem[] = [];
     const qc = risk?.queryCount ?? 0;
     const isHighDuplicateDanger = !risk?.isRecalled && !risk?.isExpired && qc >= 6;
     const isWarningDuplicate = qc >= 4 && qc < 6;
+    const nearExpiry = risk?.isNearExpiry && !risk?.isExpired && !risk?.isRecalled;
 
     if (risk?.isRecalled) {
-      return {
+      list.push({
+        key: 'recall',
         bg: 'bg-red-50 border-red-200',
         text: 'text-red-700',
         icon: <AlertTriangle className="w-6 h-6" />,
         title: '⚠️ 产品召回警告',
         subtitle: '该批次药品已启动召回，请立即停止使用并联系购买药店',
         showDetailBtn: false,
-      };
+      });
     }
     if (risk?.isExpired) {
-      return {
+      list.push({
+        key: 'expired',
         bg: 'bg-red-50 border-red-200',
         text: 'text-red-700',
         icon: <AlertTriangle className="w-6 h-6" />,
         title: '🚨 药品已过期',
         subtitle: '该药品已超过有效期，请勿服用',
         showDetailBtn: false,
-      };
+      });
     }
     if (isHighDuplicateDanger) {
-      return {
+      list.push({
+        key: 'dup-high',
         bg: 'bg-rose-50 border-rose-300',
         text: 'text-rose-700',
         icon: <ShieldAlert className="w-6 h-6" />,
         title: '🚨 追溯码查询异常',
-        subtitle: `该码在短时间内被多人查询，共${qc}次，首次查询于${risk?.firstQueryTime}，可能为回收包装重复利用或伪造，强烈建议拒收`,
+        subtitle: `共查询${qc}次，首次查询于${risk?.firstQueryTime}，明显高于同批次平均，警惕回收包装伪造`,
         showDetailBtn: true,
-      };
+      });
     }
-    if (risk?.level === 'warning') {
-      let subtitle = '';
-      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-      const expiryDate = new Date(drug.expiryDate);
-      const now = new Date();
-      const nearExpiry = expiryDate.getTime() - now.getTime() < thirtyDaysMs;
-      if (nearExpiry) {
-        subtitle = '该药品临近效期（不足30天），请尽快使用';
-      } else if (isWarningDuplicate) {
-        subtitle = `⚠️ 该追溯码近期被频繁查询，共${qc}次，请谨慎购买`;
-      } else {
-        subtitle = `该追溯码已被查询 ${qc} 次，请谨慎使用`;
-      }
-      return {
+    if (nearExpiry) {
+      list.push({
+        key: 'near-expiry',
         bg: 'bg-amber-50 border-amber-200',
         text: 'text-amber-700',
         icon: <AlertTriangle className="w-6 h-6" />,
-        title: '⚠️ 风险提示',
-        subtitle,
-        showDetailBtn: isWarningDuplicate,
-      };
+        title: '⚠️ 临近效期',
+        subtitle: '该药品临近效期（不足30天），请尽快使用',
+        showDetailBtn: false,
+      });
     }
-    return {
-      bg: 'bg-emerald-50 border-emerald-200',
-      text: 'text-emerald-700',
-      icon: <CheckCircle2 className="w-6 h-6" />,
-      title: '✅ 正品验证通过',
-      subtitle: '该药品来源渠道合法，质量检验合格',
-      showDetailBtn: false,
-    };
-  })();
+    if (isWarningDuplicate && !isHighDuplicateDanger) {
+      list.push({
+        key: 'dup-warn',
+        bg: 'bg-amber-50 border-amber-200',
+        text: 'text-amber-700',
+        icon: <AlertTriangle className="w-6 h-6" />,
+        title: '⚠️ 重复查询风险',
+        subtitle: `该追溯码近期被频繁查询，共${qc}次，请谨慎购买`,
+        showDetailBtn: true,
+      });
+    }
+    if (list.length === 0) {
+      list.push({
+        key: 'safe',
+        bg: 'bg-emerald-50 border-emerald-200',
+        text: 'text-emerald-700',
+        icon: <CheckCircle2 className="w-6 h-6" />,
+        title: '✅ 正品验证通过',
+        subtitle: '该药品来源渠道合法，质量检验合格',
+        showDetailBtn: false,
+      });
+    }
+    return list;
+  }, [risk]);
 
   const navItems = [
     { path: '', label: '药品档案', icon: <Pill className="w-5 h-5" /> },
@@ -151,29 +175,38 @@ export default function DrugPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-teal-50">
-      <div className={`px-8 py-5 border-b ${riskBanner.bg} ${riskBanner.text}`}>
-        <div className="max-w-6xl mx-auto flex items-start gap-4">
-          {riskBanner.icon}
-          <div className="flex-1">
-            <h3 className="font-semibold text-lg">{riskBanner.title}</h3>
-            <p className="opacity-90 text-sm mt-1">{riskBanner.subtitle}</p>
-          </div>
-          {risk?.isRecalled && risk.recallInfo && (
-            <a
-              href={`tel:${risk.recallInfo.contactPhone}`}
-              className="px-5 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors whitespace-nowrap"
+      <div className="space-y-2 px-8 py-4">
+        <div className="max-w-6xl mx-auto space-y-2">
+          {banners.map((b) => (
+            <div
+              key={b.key}
+              className={`px-6 py-4 border-2 rounded-2xl ${b.bg} ${b.text} transition-all`}
             >
-              联系召回 {risk.recallInfo.contactPhone}
-            </a>
-          )}
-          {riskBanner.showDetailBtn && (
-            <button
-              onClick={() => navigate(`/drug/${code}/risk`)}
-              className="px-5 py-2 bg-white/80 backdrop-blur rounded-xl hover:bg-white transition-colors whitespace-nowrap font-medium border border-current/20"
-            >
-              查看核验详情
-            </button>
-          )}
+              <div className="flex items-start gap-4">
+                {b.icon}
+                <div className="flex-1">
+                  <h3 className="font-semibold text-base">{b.title}</h3>
+                  <p className="opacity-90 text-sm mt-0.5 leading-relaxed">{b.subtitle}</p>
+                </div>
+                {risk?.isRecalled && b.key === 'recall' && risk.recallInfo && (
+                  <a
+                    href={`tel:${risk.recallInfo.contactPhone}`}
+                    className="px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors whitespace-nowrap text-sm font-medium shrink-0"
+                  >
+                    联系召回 {risk.recallInfo.contactPhone}
+                  </a>
+                )}
+                {b.showDetailBtn && (
+                  <button
+                    onClick={() => navigate(`/drug/${code}/risk`)}
+                    className="px-4 py-2 bg-white/80 backdrop-blur rounded-xl hover:bg-white transition-colors whitespace-nowrap text-sm font-medium border border-current/20 shrink-0"
+                  >
+                    查看核验详情
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

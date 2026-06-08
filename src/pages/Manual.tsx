@@ -31,7 +31,7 @@ export default function ManualPage() {
       return;
     }
     setError('');
-    await queryDrug(code.trim());
+    await queryDrug(code.trim(), 'manual_input');
     if (currentDrug || !useQueryStore.getState().error) {
       const drug = useQueryStore.getState().currentDrug;
       if (drug) {
@@ -131,6 +131,7 @@ export default function ManualPage() {
                 >
                   <Link
                     to={`/drug/${item.traceCode}`}
+                    state={{ source: 'history' }}
                     onClick={() => handleUseHistory(item.traceCode)}
                     className="flex-1"
                   >
